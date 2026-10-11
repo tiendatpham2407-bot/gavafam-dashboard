@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard Doanh thu, Ads và Profit</title>
+
+<!-- Thư viện qua CDN công khai: Tailwind CSS, Chart.js, PapaParse -->
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f9f9f7; --panel: #fcfcfb; --fg: #0b0b0b; --fg2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10);
+    --pos: #006300; --neg: #d03b3b; --warnbg: #fdf3d8; --errbg: #fbe4e4;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948; --gray: #898781;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #0d0d0d; --panel: #1a1a19; --fg: #f0efec; --fg2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+      --pos: #0ca30c; --neg: #e66767; --warnbg: #3a2f10; --errbg: #3b1b1b;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    }
+  }
+  html { background: var(--bg); }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; min-width: 0; }
+  .btn { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--border); background: var(--panel);
+         color: var(--fg); border-radius: 8px; padding: .4rem .75rem; font-size: .8125rem; cursor: pointer; }
+  .btn:hover { background: var(--grid); }
+  .btn-primary { background: var(--s1); border-color: transparent; color: #fff; }
+  .btn-primary:hover { background: var(--s1); filter: brightness(1.08); }
+  .field { border: 1px solid var(--axis); background: var(--panel); color: var(--fg); border-radius: 6px;
+           padding: .3rem .5rem; font-size: .8125rem; width: 100%; min-width: 0; }
+  textarea.field { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem; }
+  .lbl { display: block; font-size: .75rem; color: var(--fg2); margin-bottom: .2rem; }
+  .muted { color: var(--fg2); }
+  .drop { border: 2px dashed var(--axis); border-radius: 12px; padding: 1.25rem; text-align: center; cursor: pointer; transition: background .15s, border-color .15s; }
+  .drop.over { background: color-mix(in srgb, var(--s1) 10%, transparent); border-color: var(--s1); }
+  .tbl { width: 100%; border-collapse: collapse; font-size: .875rem; font-variant-numeric: tabular-nums; }
+  .tbl th { font-size: .75rem; font-weight: 500; color: var(--fg2); text-align: right; padding: .4rem .6rem;
+            border-bottom: 1px solid var(--grid); white-space: nowrap; background: var(--panel); }
+  .tbl td { text-align: right; padding: .45rem .6rem; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  .tbl th:first-child, .tbl td:first-child { text-align: left; }
+  .tbl tbody tr:last-child td { border-bottom: 0; }
+  .tbl .pos { color: var(--pos); } .tbl .neg { color: var(--neg); }
+  .scroll { max-height: 26rem; overflow: auto; }
+  .scroll .tbl thead th { position: sticky; top: 0; z-index: 2; }
+  .tbl tr.tot td { font-weight: 600; position: sticky; top: var(--hh, 2rem); z-index: 1; border-bottom: 2px solid var(--axis); background-color: var(--panel); }
+  .gc { background-image: linear-gradient(color-mix(in srgb, var(--gc) 11%, transparent), color-mix(in srgb, var(--gc) 11%, transparent)); }
+  tr.tot .gc { background-image: linear-gradient(color-mix(in srgb, var(--gc) 24%, transparent), color-mix(in srgb, var(--gc) 24%, transparent)); }
+  th.gc { box-shadow: inset 0 -3px 0 var(--gc); }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .chartbox { position: relative; height: 18rem; }
+  .kpi-num { font-size: 1.6rem; line-height: 1.15; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .note-warn { border-left: 3px solid var(--s4); background: var(--warnbg); padding: .5rem .75rem; font-size: .8125rem; border-radius: 0 6px 6px 0; }
+  .note-err { border-left: 3px solid var(--neg); background: var(--errbg); padding: .5rem .75rem; font-size: .8125rem; border-radius: 0 6px 6px 0; }
+  .hidden-x { display: none !important; }
+  details > summary { cursor: pointer; }
+</style>
+</head>
+
+<body>
+<div class="mx-auto max-w-7xl px-4 py-6 space-y-5">
+
+  <!-- Tiêu đề -->
+  <header class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold">Dashboard Doanh thu, Ads và Profit</h1>
+      <p id="subtitle" class="muted text-sm mt-1">Tải file CSV lên để bắt đầu. Dữ liệu chỉ nằm trong trình duyệt của bạn, không gửi đi đâu.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button class="btn" id="btnSample" type="button">Dữ liệu mẫu (giả lập)</button>
+      <button class="btn" id="btnExport" type="button">Tải CSV tổng hợp</button>
+      <button class="btn" id="btnClear" type="button">Xóa dữ liệu</button>
+      <button class="btn" id="btnSettings" type="button" aria-expanded="false">⚙ Cài đặt và ánh xạ cột</button>
+    </div>
+  </header>
+
+  <!-- Thông báo lỗi / cảnh báo -->
+  <div id="banner" class="space-y-2" aria-live="polite"></div>
+
+  <!-- Nạp dữ liệu -->
+  <section class="card space-y-3" aria-label="Nạp dữ liệu">
+    <label id="dropzone" class="drop block" for="fileInput">
+      <div class="text-sm font-medium">Kéo thả file CSV vào đây, hoặc bấm để chọn file</div>
+      <div class="muted text-xs mt-1">Nhận nhiều file cùng lúc: đơn hàng Shopify, báo cáo ads (Facebook, Google...), hoặc bảng tổng hợp có cột ngày, sản phẩm, doanh thu. Tự nhận diện loại file và cột.</div>
+      <input id="fileInput" type="file" accept=".csv,text/csv" multiple class="mt-3 text-sm">
+    </label>
+    <div class="space-y-2" id="gsBox">
+      <div class="text-sm font-medium">Hoặc nạp trực tiếp từ link Google Sheet</div>
+      <div class="muted text-xs">Sheet phải được chia sẻ ở chế độ "Bất kỳ ai có đường liên kết đều xem được". Mỗi tab tải về là một nguồn riêng, giống như một file CSV.</div>
+      <input id="gsUrl" class="field" type="url" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
+      <textarea id="gsTabs" class="field" rows="3" placeholder="Tên các tab cần tải, mỗi dòng một tab. Ví dụ:&#10;fb spent FD26&#10;26GG spent"></textarea>
+      <div class="flex flex-wrap items-center gap-3">
+        <button class="btn" id="gsLoad" type="button">Tải từ Google Sheet</button>
+        <label class="text-sm flex items-center gap-2"><input id="gsAuto" type="checkbox"> Tự tải khi mở trang</label>
+        <span id="gsStatus" class="muted text-xs"></span>
+      </div>
+    </div>
+    <div id="sources" class="space-y-2"></div>
+  </section>
+
+  <!-- Cài đặt (ẩn/hiện) -->
+  <section id="settingsPanel" class="card hidden-x space-y-4" aria-label="Cài đặt">
+    <div>
+      <h2 class="text-base font-semibold">Cài đặt chung</h2>
+      <p class="muted text-xs mt-1">Ánh xạ cột của từng file nằm trong khung của file đó ở phía trên. Mọi thay đổi được lưu trong trình duyệt và áp dụng ngay.</p>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div>
+        <label class="lbl" for="setMargin">Hệ số sau giá vốn (Profit = doanh thu × hệ số − ads)</label>
+        <input id="setMargin" class="field" type="number" step="0.01" min="0" max="1">
+      </div>
+      <div>
+        <label class="lbl" for="setNoCountry">Nhãn khi không xác định được quốc gia</label>
+        <input id="setNoCountry" class="field" type="text">
+      </div>
+      <div class="sm:col-span-2 flex items-end">
+        <label class="text-sm flex items-center gap-2"><input id="setOverlap" type="checkbox"> Chỉ tính các ngày mà cả doanh thu lẫn ads đều có dữ liệu</label>
+      </div>
+    </div>
+    <div>
+      <label class="lbl" for="setAddon">Dòng phụ không tính là sản phẩm (từ khóa đầu tên hoặc SKU, cách nhau bằng dấu phẩy)</label>
+      <input id="setAddon" class="field" type="text">
+    </div>
+    <div class="grid gap-3 lg:grid-cols-2">
+      <div>
+        <label class="lbl" for="setProdRules">Quy tắc nhận diện sản phẩm cho đơn hàng (mỗi dòng: từ khóa trong SKU hoặc tên =&gt; Tên sản phẩm). Chỉ dùng khi không chọn cột phân loại sản phẩm.</label>
+        <textarea id="setProdRules" class="field" rows="8"></textarea>
+      </div>
+      <div>
+        <label class="lbl" for="setAdsRules">Quy tắc gán sản phẩm cho ads (mỗi dòng: từ khóa trong tên ad set hoặc campaign =&gt; Tên sản phẩm)</label>
+        <textarea id="setAdsRules" class="field" rows="8"></textarea>
+      </div>
+    </div>
+  </section>
+
+  <!-- Vùng kết quả -->
+  <div id="results" class="hidden-x space-y-5">
+
+    <!-- KPI -->
+    <section id="kpis" class="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" aria-label="Chỉ số chính"></section>
+
+    <!-- Bộ lọc sản phẩm -->
+    <section class="card" aria-label="Bộ lọc sản phẩm">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <h2 class="text-sm font-semibold">Hiển thị loại sản phẩm</h2>
+        <div class="flex gap-2">
+          <button class="btn" id="btnAllProd" type="button">Chọn tất cả</button>
+          <button class="btn" id="btnNoProd" type="button">Bỏ chọn tất cả</button>
+        </div>
+      </div>
+      <div id="filters" class="flex flex-wrap gap-x-5 gap-y-2"></div>
+    </section>
+
+    <!-- Biểu đồ -->
+    <section class="grid gap-4 lg:grid-cols-2" aria-label="Biểu đồ">
+      <div class="card">
+        <h2 class="text-sm font-semibold">Doanh thu và ads theo ngày</h2>
+        <p class="muted text-xs mb-2">USD mỗi ngày. Rê chuột vào một ngày để xem % ads ÷ doanh thu. Cả kỳ: <span id="adsPctTxt">—</span></p>
+        <div class="chartbox"><canvas id="cRevAds" role="img" aria-label="Biểu đồ đường doanh thu và ads theo ngày"></canvas></div>
+      </div>
+      <div class="card">
+        <h2 class="text-sm font-semibold">Profit theo ngày</h2>
+        <p class="muted text-xs mb-2">Doanh thu × hệ số − ads, USD. Cột đỏ là ngày lỗ.</p>
+        <div class="chartbox"><canvas id="cProfit" role="img" aria-label="Biểu đồ cột Profit theo ngày"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <h2 class="text-sm font-semibold">Theo loại sản phẩm theo ngày</h2>
+          <select id="metricSel" class="field" style="width:auto" aria-label="Chỉ số hiển thị">
+            <option value="rev">Doanh thu</option>
+            <option value="ads">Ads</option>
+            <option value="profit">Profit</option>
+          </select>
+        </div>
+        <p class="muted text-xs mb-2">Mỗi loại sản phẩm một màu, tự sinh từ dữ liệu.</p>
+        <div class="chartbox"><canvas id="cProduct" role="img" aria-label="Biểu đồ cột chồng theo loại sản phẩm"></canvas></div>
+      </div>
+      <div class="card">
+        <h2 class="text-sm font-semibold">Tỷ lệ chi tiêu ads theo sản phẩm</h2>
+        <p class="muted text-xs mb-2">% spend by product trong kỳ tính.</p>
+        <div class="chartbox"><canvas id="cShare" role="img" aria-label="Biểu đồ thanh tỷ lệ chi tiêu ads theo sản phẩm"></canvas></div>
+      </div>
+    </section>
+
+    <!-- Bảng theo quốc gia -->
+    <section class="card" aria-label="Theo quốc gia">
+      <h2 class="text-sm font-semibold">Theo quốc gia</h2>
+      <p class="muted text-xs mb-2">Quốc gia của đơn lấy từ địa chỉ giao hàng, của ads lấy từ tên campaign.</p>
+      <div class="overflow-x-auto"><table class="tbl" id="tblCountry"></table></div>
+      <div id="noteCountry" class="mt-2 space-y-1"></div>
+    </section>
+
+    <!-- Bảng ngày x quốc gia -->
+    <section class="card" aria-label="Theo ngày và quốc gia">
+      <h2 class="text-sm font-semibold">Spent, Profit và ROAS theo quốc gia theo ngày</h2>
+      <p class="muted text-xs mb-2">USD. Dòng đầu là tổng cả kỳ, rồi đến từng ngày, ngày mới nhất ở trên. Spent là tổng ads mọi kênh; ROAS = doanh thu ÷ spent, trống khi không chi ads. Chữ xanh: lãi hoặc ROAS trên mức hòa vốn (<span id="beTxt">—</span>); chữ đỏ: lỗ hoặc dưới hòa vốn.</p>
+      <div id="dcKey" class="flex flex-wrap gap-4 text-xs muted mb-2"></div>
+      <div class="scroll" id="dcScroll"><table class="tbl" id="tblDay"></table></div>
+    </section>
+
+    <!-- Bảng theo sản phẩm -->
+    <section class="card" aria-label="Theo sản phẩm">
+      <h2 class="text-sm font-semibold">Kết quả từng loại sản phẩm</h2>
+      <p class="muted text-xs mb-2">Ads không gán được sản phẩm nằm ở nhóm riêng. Sản phẩm không có ads hoặc không có đơn hiển thị 0 ở cột tương ứng.</p>
+      <div class="overflow-x-auto"><table class="tbl" id="tblProduct"></table></div>
+    </section>
+
+    <!-- Ghi chú cách tính -->
+    <section class="card text-xs muted space-y-2" aria-label="Cách tính">
+      <p><b class="text-[var(--fg)]">Cách tính.</b> Profit = doanh thu USD × <span id="mTxt">0,55</span> − chi tiêu ads USD. Doanh thu đơn hàng = Total trừ hoàn tiền (đơn hủy bằng 0), nhân tỷ giá của file; phí ship và các dòng phụ được chia vào các sản phẩm cùng đơn theo giá trị. Ads cộng từ mọi file ads, ghép theo ngày + quốc gia + sản phẩm. Khi nhiều file đơn hàng chứa cùng mã đơn, bản ở file nạp sau được dùng.</p>
+      <div id="noteWindow"></div>
+    </section>
+  </div>
+
+  <!-- Trạng thái trống -->
+  <section id="empty" class="card text-sm muted">
+    Chưa có dữ liệu. Hãy kéo thả file CSV vào khung phía trên, hoặc bấm "Dữ liệu mẫu (giả lập)" để xem thử giao diện.
+  </section>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+/* ====================== Tiện ích ====================== */
+const $ = (s, r) => (r || document).querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const foldLower = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/đ/g, 'd');
+const norm = s => foldLower(s).replace(/[^a-z0-9]+/g, ' ').trim();
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* bỏ qua */ } }
+};
+const hashStr = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(16); };
+const NEG = '−';
+const fmtUsd0 = v => (v < 0 && Math.round(v) !== 0 ? NEG : '') + '$' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
+const fmtUsd2 = v => (v < -0.004 ? NEG : '') + '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = v => (v * 100).toFixed(1) + '%';
+const fmtRoas = v => v.toFixed(2);
+const fmtInt = v => Math.round(v).toLocaleString('en-US');
+const fmtDay = d => d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4);
+const fmtDayShort = d => d.slice(8, 10) + '/' + d.slice(5, 7);
+const titleCase = s => s.replace(/(^|[^a-z])([a-z])/g, (m, a, b) => a + b.toUpperCase());
+
+function parseNum(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  let s = String(v).trim();
+  if (s === '') return null;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  s = s.replace(/[^\d.,\-]/g, '');
+  if (s.startsWith('-')) { neg = !neg; s = s.slice(1); }
+  s = s.replace(/-/g, '');
+  if (s === '') return null;
+  const hasDot = s.includes('.'), hasCom = s.includes(',');
+  if (hasDot && hasCom) {
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(/,/g, '');
+  } else if (hasCom) {
+    s = (s.split(',').length === 2 && /,\d{1,2}$/.test(s)) ? s.replace(',', '.') : s.replace(/,/g, '');
+  } else if (hasDot && s.split('.').length > 2) {
+    s = s.replace(/\./g, '');
+  }
+  const n = parseFloat(s);
+  return isFinite(n) ? (neg ? -n : n) : null;
+}
+
+function parseDate(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const mk = (y, m, d) => {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+    return dt.toISOString().slice(0, 10);
+  };
+  let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (m) return mk(+m[1], +m[2], +m[3]);
+  m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/);
+  if (m) {
+    const a = +m[1], b = +m[2], y = +m[3];
+    if (a > 12) return mk(y, b, a);        // dd/mm/yyyy
+    if (b > 12) return mk(y, a, b);        // mm/dd/yyyy
+    return mk(y, b, a);                    // mơ hồ: coi là dd/mm/yyyy
+  }
+  if (/[a-zA-Z]{3}/.test(s)) {
+    const t = Date.parse(s);
+    if (!isNaN(t)) { const d = new Date(t); return mk(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
+  }
+  return null;
+}
+
+/* ====================== Cấu hình mặc định ====================== */
+const DEFAULT_SETTINGS = {
+  margin: 0.55,
+  overlapOnly: true,
+  noCountry: '(Không rõ)',
+  addonKw: 'Fraktförsäkring, Insure01, Back side, Tip, Shipping insurance',
+  prodRules: [
+    'apparel_product_gca_t-shirt => T-shirt',
+    'apparel_product_gca_hoodie => Hoodie',
+    'apparel_product_gca_sweatshirt => Sweatshirt',
+    'apparel_product_gca_onesie => Onesie',
+    'mug_ => Mug',
+    'klas- => Canvas',
+    'canvas => Canvas',
+    'w-stand-ornament => Acrylic card'
+  ].join('\n'),
+  adsRules: [
+    'card => Acrylic card',
+    'poster => Poster',
+    '3d => 3D',
+    't-shirt => T-shirt',
+    'tshirt => T-shirt',
+    'star war => T-shirt',
+    'pop culture => T-shirt'
+  ].join('\n')
+};
+
+const TYPE_LABEL = { orders: 'Đơn hàng (Shopify)', ads: 'Quảng cáo (chi tiêu)', tidy: 'Bảng tổng hợp' };
+
+// Danh sách cột cần ánh xạ cho từng loại file
+const FIELDS = {
+  orders: [
+    { k: 'order', label: 'Mã đơn', req: true },
+    { k: 'date', label: 'Cột ngày', req: true },
+    { k: 'total', label: 'Cột doanh thu (Total của đơn)', req: true },
+    { k: 'country', label: 'Quốc gia' },
+    { k: 'refunded', label: 'Hoàn tiền' },
+    { k: 'cancelled', label: 'Ngày hủy đơn' },
+    { k: 'itemName', label: 'Tên dòng sản phẩm' },
+    { k: 'sku', label: 'SKU' },
+    { k: 'qty', label: 'Số lượng' },
+    { k: 'price', label: 'Đơn giá' },
+    { k: 'productCol', label: 'Cột phân loại sản phẩm', auto: true }
+  ],
+  ads: [
+    { k: 'date', label: 'Cột ngày', req: true },
+    { k: 'spend', label: 'Cột chi tiêu', req: true },
+    { k: 'campaign', label: 'Tên campaign' },
+    { k: 'adset', label: 'Cột phân loại sản phẩm (tên ad set)' },
+    { k: 'country', label: 'Quốc gia (nếu có cột riêng)' }
+  ],
+  tidy: [
+    { k: 'date', label: 'Cột ngày', req: true },
+    { k: 'product', label: 'Cột phân loại sản phẩm', req: true },
+    { k: 'revenue', label: 'Cột doanh thu / chỉ số', req: true },
+    { k: 'country', label: 'Quốc gia' },
+    { k: 'ads', label: 'Chi tiêu ads' },
+    { k: 'orders', label: 'Số đơn' },
+    { k: 'units', label: 'Số lượng' }
+  ]
+};
+
+// Từ đồng nghĩa dùng để tự nhận diện cột (đã chuẩn hóa: không dấu, chữ thường)
+const SYN = {
+  orders: {
+    order: ['name', 'order id', 'order number', 'order name', 'order no', 'ma don', 'order', 'id'],
+    date: ['created at', 'order date', 'date', 'day', 'created', 'paid at', 'ngay dat', 'ngay'],
+    total: ['total', 'total price', 'order total', 'grand total', 'doanh thu', 'revenue', 'sales', 'amount', 'tong tien'],
+    country: ['shipping country', 'shipping country code', 'ship country', 'country', 'billing country', 'quoc gia'],
+    refunded: ['refunded amount', 'refunds', 'refund', 'refunded', 'hoan tien'],
+    cancelled: ['cancelled at', 'canceled at', 'cancel date', 'cancelled', 'canceled'],
+    itemName: ['lineitem name', 'line item name', 'item name', 'product name', 'title', 'product', 'ten san pham'],
+    sku: ['lineitem sku', 'line item sku', 'sku', 'ma sku'],
+    qty: ['lineitem quantity', 'line item quantity', 'quantity', 'qty', 'so luong'],
+    price: ['lineitem price', 'line item price', 'unit price', 'price', 'don gia'],
+    productCol: ['product type', 'producttype', 'loai san pham', 'nhom san pham', 'category']
+  },
+  ads: {
+    date: ['day', 'date', 'ngay', 'reporting starts', 'date start', 'start date'],
+    spend: ['amount spent', 'amount spent usd', 'cost spend', 'spend', 'cost', 'ad spend', 'chi tieu', 'chi phi'],
+    campaign: ['campaign name', 'campaign', 'chien dich'],
+    adset: ['ad set name', 'adset name', 'ad group name', 'ad group', 'adset', 'nhom quang cao'],
+    country: ['country', 'quoc gia', 'geo']
+  },
+  tidy: {
+    date: ['date', 'day', 'created at', 'order date', 'ngay'],
+    product: ['product type', 'product', 'category', 'type', 'loai san pham', 'san pham', 'nhom san pham'],
+    revenue: ['revenue', 'revenue usd', 'sales', 'amount', 'doanh thu', 'total', 'gmv'],
+    country: ['country', 'quoc gia', 'market', 'thi truong'],
+    ads: ['ads', 'ads usd', 'ad spend', 'spend', 'cost', 'chi phi ads', 'chi tieu ads'],
+    orders: ['orders', 'order count', 'so don'],
+    units: ['units', 'quantity', 'qty', 'so luong']
+  }
+};
+
+function findHeader(fields, syns, used, exactOnly) {
+  const nf = fields.map(h => ({ h, n: norm(h) }));
+  for (const s of syns) { const hit = nf.find(x => x.n === s && !used.has(x.h)); if (hit) return hit.h; }
+  if (exactOnly) return '';
+  for (const s of syns) { const hit = nf.find(x => (' ' + x.n + ' ').includes(' ' + s + ' ') && !used.has(x.h)); if (hit) return hit.h; }
+  return '';
+}
+function autoMap(type, fields) {
+  const used = new Set(), out = {};
+  FIELDS[type].forEach(f => {
+    const h = findHeader(fields, SYN[type][f.k] || [], used, !!f.auto);
+    out[f.k] = h;
+    if (h) used.add(h);
+  });
+  return out;
+}
+function detectType(fields) {
+  const n = fields.map(norm);
+  if (n.includes('lineitem name') || (n.includes('name') && n.includes('lineitem sku'))) return 'orders';
+  const sp = findHeader(fields, SYN.ads.spend, new Set(), true);
+  const dt = findHeader(fields, SYN.ads.date, new Set(), false);
+  const rv = findHeader(fields, ['revenue', 'doanh thu', 'sales'], new Set(), true);
+  if (sp && dt && !rv) return 'ads';
+  return 'tidy';
+}
+function guessChannel(fields, name) {
+  const n = fields.map(norm);
+  if (n.includes('ad set name') || n.includes('amount spent')) return 'Facebook';
+  if (n.includes('cost spend') || (n.includes('conversions') && n.includes('campaign name'))) return 'Google';
+  return name.replace(/\.[^.]+$/, '');
+}
+
+/* ====================== Trạng thái ====================== */
+const state = {
+  sources: [],
+  settings: Object.assign({}, DEFAULT_SETTINGS, LS.get('pfd:settings', {})),
+  hidden: new Set(LS.get('pfd:hidden', [])),
+  metric: 'rev',
+  mapOpen: false,
+  model: null,
+  agg: null,
+  nextId: 1
+};
+let charts = {};
+
+/* ====================== Nạp file ====================== */
+function pushBanner(list, level, src, msg) { list.push({ level, src, msg }); }
+
+function readFile(file) {
+  return new Promise(resolve => {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: 'greedy',
+      encoding: 'UTF-8',
+      complete: res => resolve({ res }),
+      error: err => resolve({ err })
+    });
+  });
+}
+
+const loadIssues = []; // lỗi phát sinh khi nạp file (không tạo được nguồn)
+
+async function handleFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  for (const file of files) {
+    if (!/\.(csv|txt|tsv)$/i.test(file.name) && file.type && !/csv|text/.test(file.type)) {
+      pushBanner(loadIssues, 'error', file.name, 'Không phải file CSV. Hãy chọn file có đuôi .csv.');
+      continue;
+    }
+    ingestParsed(file.name, await readFile(file));
+  }
+  refresh();
+}
+
+// Xử lý kết quả đã parse (từ file hoặc từ Google Sheet) -> tạo nguồn dữ liệu. Trả về true nếu thành công.
+function ingestParsed(name, out) {
+  if (out.err) { pushBanner(loadIssues, 'error', name, 'Không đọc được dữ liệu: ' + (out.err.message || out.err)); return false; }
+  const res = out.res;
+  const fields = ((res.meta && res.meta.fields) || []).filter(f => f != null && String(f).trim() !== '');
+  if (!fields.length) { pushBanner(loadIssues, 'error', name, 'Dữ liệu rỗng hoặc không có dòng tiêu đề (header).'); return false; }
+  const rows = (res.data || []).filter(r => r && Object.keys(r).length);
+  if (!rows.length) { pushBanner(loadIssues, 'error', name, 'Chỉ có dòng tiêu đề, không có dòng dữ liệu nào.'); return false; }
+  const badStruct = (res.errors || []).filter(e => !['TooFewFields', 'TooManyFields', 'UndetectableDelimiter'].includes(e.code));
+  if (badStruct.length) pushBanner(loadIssues, 'warn', name, badStruct.length + ' dòng bị lỗi cấu trúc CSV (ví dụ: ' + (badStruct[0].message || badStruct[0].code) + ').');
+  addSource(name, fields, rows);
+  return true;
+}
+
+/* ====================== Nạp từ Google Sheet ====================== */
+function parseSheetUrl(url) {
+  const m = String(url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (!m) return null;
+  const g = String(url).match(/[#?&]gid=(\d+)/);
+  return { id: m[1], gid: g ? g[1] : null };
+}
+
+async function fetchSheetTab(id, tab, gid) {
+  const q = tab ? 'sheet=' + encodeURIComponent(tab) : 'gid=' + encodeURIComponent(gid || '0');
+  const url = 'https://docs.google.com/spreadsheets/d/' + id + '/gviz/tq?tqx=out:csv&' + q;
+  let resp;
+  try { resp = await fetch(url, { cache: 'no-store' }); }
+  catch (e) { throw new Error('Không kết nối được tới Google (mạng bị chặn, hoặc sheet chưa chia sẻ công khai).'); }
+  if (!resp.ok) throw new Error('Google trả về lỗi ' + resp.status + '. Kiểm tra link và quyền chia sẻ.');
+  const text = await resp.text();
+  if (/^\s*</.test(text)) throw new Error('Sheet chưa được chia sẻ công khai (Google trả về trang đăng nhập). Hãy chọn "Bất kỳ ai có đường liên kết" và quyền Người xem.');
+  if (/^\s*(\/\*O_o\*\/\s*)?google\.visualization\.Query\.setResponse/.test(text)) throw new Error('Không tìm thấy tab "' + (tab || ('gid ' + gid)) + '". Kiểm tra lại tên tab (phân biệt dấu cách và chữ hoa).');
+  return text;
+}
+
+function parseText(text) {
+  return new Promise(resolve => {
+    Papa.parse(text, { header: true, skipEmptyLines: 'greedy', complete: res => resolve({ res }), error: err => resolve({ err }) });
+  });
+}
+
+async function loadGoogleSheet(silent) {
+  const urlEl = $('#gsUrl'), tabsEl = $('#gsTabs'), st = $('#gsStatus'), btn = $('#gsLoad');
+  const info = parseSheetUrl(urlEl.value.trim());
+  if (!info) { pushBanner(loadIssues, 'error', 'Google Sheet', 'Link không đúng dạng https://docs.google.com/spreadsheets/d/<mã>/... Hãy dán lại link chia sẻ.'); refresh(); return; }
+  const tabs = tabsEl.value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  LS.set('pfd:gsheet', { url: urlEl.value.trim(), tabs: tabsEl.value, auto: $('#gsAuto').checked });
+  const jobs = tabs.length ? tabs.map(t => ({ tab: t, label: t })) : [{ tab: '', label: 'Sheet (gid ' + (info.gid || '0') + ')' }];
+  btn.disabled = true; st.textContent = 'Đang tải…';
+  let ok = 0;
+  for (const j of jobs) {
+    try {
+      const text = await fetchSheetTab(info.id, j.tab, info.gid);
+      if (ingestParsed('GS: ' + j.label, await parseText(text))) ok++;
+    } catch (e) { pushBanner(loadIssues, 'error', 'Google Sheet · ' + j.label, e.message || String(e)); }
+  }
+  btn.disabled = false;
+  st.textContent = 'Đã tải ' + ok + '/' + jobs.length + ' tab lúc ' + new Date().toLocaleTimeString('vi-VN');
+  refresh();
+}
+
+function defaultOptions(type, fields, name, mapping, rows) {
+  if (type === 'orders') {
+    let cur = '';
+    const ch = findHeader(fields, ['currency', 'tien te'], new Set(), true);
+    if (ch) { const r = rows.find(x => x[ch]); if (r) cur = String(r[ch]).trim().toUpperCase(); }
+    const rate = cur === 'USD' ? 1 : (cur === 'SEK' || !cur ? 0.1 : 1);
+    return { rate, currency: cur };
+  }
+  if (type === 'ads') {
+    const channel = guessChannel(fields, name);
+    return { rate: 1, channel, productMode: mapping.adset ? 'rules' : 'fixed', fixedLabel: channel + ' (chưa gán SP)' };
+  }
+  return { rate: 1 };
+}
+
+function addSource(name, fields, rows) {
+  const sig = hashStr(fields.join('\u0001'));
+  const saved = LS.get('pfd:map:' + sig, null);
+  let type, mapping, options, restored = false;
+  if (saved && saved.type && saved.mapping && saved.options) {
+    type = saved.type; mapping = saved.mapping; options = saved.options; restored = true;
+  } else {
+    type = detectType(fields);
+    mapping = autoMap(type, fields);
+    options = defaultOptions(type, fields, name, mapping, rows);
+  }
+  if (type === 'orders' && options.currency == null) options.currency = defaultOptions(type, fields, name, mapping, rows).currency;
+  const src = { id: state.nextId++, name, type, fields, rows, mapping, options, sig, restored };
+  const idx = state.sources.findIndex(s => s.name === name);
+  if (idx >= 0) state.sources[idx] = src; else state.sources.push(src);
+}
+
+function saveMapping(src) {
+  LS.set('pfd:map:' + src.sig, { type: src.type, mapping: src.mapping, options: src.options });
+}
+
+/* ====================== Xử lý dữ liệu ====================== */
+function parseRules(text) {
+  return String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+    const i = l.indexOf('=>');
+    if (i < 0) return null;
+    return { kw: foldLower(l.slice(0, i).trim()), name: l.slice(i + 2).trim() };
+  }).filter(r => r && r.kw && r.name);
+}
+
+function buildModel() {
+  const S = state.settings;
+  const issues = loadIssues.slice();
+  const facts = new Map();
+  const channels = [];
+  const countries = new Set();
+  const range = { revMin: null, revMax: null, adsMin: null, adsMax: null };
+  let hasRev = false, hasAds = false;
+  const bump = (kind, day) => {
+    const a = kind + 'Min', b = kind + 'Max';
+    if (range[a] == null || day < range[a]) range[a] = day;
+    if (range[b] == null || day > range[b]) range[b] = day;
+  };
+  const getFact = (day, country, product) => {
+    const k = day + '|' + country + '|' + product;
+    let f = facts.get(k);
+    if (!f) { f = { day, country, product, rev: 0, units: 0, orders: new Set(), ordersN: 0, ads: {} }; facts.set(k, f); }
+    return f;
+  };
+  const addChannel = c => { if (!channels.includes(c)) channels.push(c); };
+
+  state.sources.forEach(s => { s.err = ''; s.info = ''; });
+
+  const missing = src => {
+    const miss = FIELDS[src.type].filter(f => f.req && (!src.mapping[f.k] || !src.fields.includes(src.mapping[f.k]))).map(f => f.label);
+    if (miss.length) {
+      src.err = 'Thiếu cột bắt buộc: ' + miss.join(', ') + '. Mở "Cài đặt và ánh xạ cột" để chọn lại cột tương ứng.';
+      pushBanner(issues, 'error', src.name, src.err);
+      return true;
+    }
+    return false;
+  };
+
+  const addonKws = String(S.addonKw || '').split(',').map(x => norm(x)).filter(Boolean);
+  const startsWord = (t, k) => t === k || t.startsWith(k + ' ');
+  const isAddon = (name, sku) => { const n = norm(name), s = norm(sku); return addonKws.some(k => startsWord(n, k) || startsWord(s, k)); };
+  const prodRules = parseRules(S.prodRules);
+  const adsRules = parseRules(S.adsRules);
+  const classify = (line, hasPC) => {
+    if (isAddon(line.name, line.sku)) return null;
+    if (hasPC && line.pc != null && String(line.pc).trim()) return String(line.pc).trim();
+    const sku = foldLower(line.sku), name = foldLower(line.name);
+    for (const r of prodRules) if (sku && sku.includes(r.kw)) return r.name;
+    for (const r of prodRules) if (name && name.includes(r.kw)) return r.name;
+    const mm = sku.match(/^apparel_product_gca_([a-z0-9\-]+)/);
+    if (mm) return titleCase(mm[1]);
+    return 'Khác';
+  };
+
+  /* ---- 1. Đơn hàng (gộp theo mã đơn; file nạp sau ghi đè file nạp trước) ---- */
+  const orderMap = new Map();
+  const stat = new Map();
+  state.sources.filter(s => s.type === 'orders').forEach(src => {
+    stat.set(src.id, { badDate: 0, sampleBad: '', noTotal: 0, cancelled: 0, badNum: 0, used: 0, noId: 0 });
+    if (missing(src)) return;
+    const m = src.mapping, st = stat.get(src.id);
+    const local = new Map();
+    src.rows.forEach(r => {
+      const id = String(r[m.order] == null ? '' : r[m.order]).trim();
+      if (!id) { st.noId++; return; }
+      if (!local.has(id)) local.set(id, []);
+      local.get(id).push(r);
+    });
+    local.forEach((rows, id) => orderMap.set(id, { src, rows }));
+  });
+  const rateWarned = new Set();
+  orderMap.forEach((o, id) => {
+    const src = o.src, m = src.mapping, st = stat.get(src.id);
+    const rate = Number(src.options.rate) || 0;
+    if (src.options.currency && src.options.currency !== 'USD' && rate === 1 && !rateWarned.has(src.id)) {
+      rateWarned.add(src.id);
+      pushBanner(issues, 'warn', src.name, 'Tiền tệ của file là ' + src.options.currency + ' nhưng tỷ giá sang USD đang để 1. Hãy nhập tỷ giá đúng trong khung của file.');
+    }
+    const head = o.rows.find(r => parseNum(r[m.total]) != null);
+    if (!head) { st.noTotal++; return; }
+    let day = parseDate(head[m.date]);
+    if (!day) { const r2 = o.rows.find(r => parseDate(r[m.date])); if (r2) day = parseDate(r2[m.date]); }
+    if (!day) { st.badDate++; if (!st.sampleBad) st.sampleBad = String(head[m.date] == null ? '' : head[m.date]); return; }
+    if (m.cancelled && String(head[m.cancelled] == null ? '' : head[m.cancelled]).trim() !== '') { st.cancelled++; return; }
+    const total = parseNum(head[m.total]);
+    const refunded = m.refunded ? (parseNum(head[m.refunded]) || 0) : 0;
+    const net = Math.max(total - refunded, 0) * rate;
+    const country = (m.country ? String(head[m.country] == null ? '' : head[m.country]).trim().toUpperCase() : '') || S.noCountry;
+    countries.add(country);
+    const hasPC = !!m.productCol;
+    const lines = o.rows.map(r => ({
+      name: m.itemName ? r[m.itemName] : '',
+      sku: m.sku ? r[m.sku] : '',
+      qty: m.qty ? (parseNum(r[m.qty]) == null ? 1 : parseNum(r[m.qty])) : 1,
+      price: m.price ? (parseNum(r[m.price]) || 0) : 0,
+      pc: hasPC ? r[m.productCol] : ''
+    })).filter(l => String(l.name || '').trim() || String(l.sku || '').trim() || l.price);
+    const prodLines = [];
+    lines.forEach(l => { const p = classify(l, hasPC); if (p) prodLines.push({ p, qty: l.qty, w: l.qty * l.price }); });
+    if (!prodLines.length) prodLines.push({ p: 'Khác', qty: 0, w: 1 });
+    let sumW = prodLines.reduce((a, l) => a + l.w, 0);
+    if (!(sumW > 0)) { prodLines.forEach(l => { l.w = l.qty || 1; }); sumW = prodLines.reduce((a, l) => a + l.w, 0); }
+    prodLines.forEach(l => {
+      const f = getFact(day, country, l.p);
+      f.rev += net * l.w / sumW;
+      f.units += l.qty;
+      f.orders.add(id);
+    });
+    hasRev = true; bump('rev', day); st.used++;
+  });
+  state.sources.filter(s => s.type === 'orders').forEach(src => {
+    const st = stat.get(src.id); if (!st || src.err) return;
+    src.info = st.used + ' đơn hợp lệ' + (st.cancelled ? ', ' + st.cancelled + ' đơn hủy bị loại' : '');
+    if (st.badDate) pushBanner(issues, st.used ? 'warn' : 'error', src.name, st.badDate + ' đơn có ngày không hợp lệ nên bị bỏ qua (ví dụ giá trị: "' + st.sampleBad + '"). Kiểm tra lại cột ngày trong phần ánh xạ.');
+    if (st.noTotal) pushBanner(issues, 'warn', src.name, st.noTotal + ' mã đơn không có dòng nào chứa tổng tiền nên bị bỏ qua.');
+    if (st.noId) pushBanner(issues, 'warn', src.name, st.noId + ' dòng không có mã đơn nên bị bỏ qua.');
+    if (!st.used && !st.badDate) pushBanner(issues, 'error', src.name, 'Không có đơn hợp lệ nào trong file này.');
+  });
+
+  /* ---- 2. Bảng tổng hợp ---- */
+  state.sources.filter(s => s.type === 'tidy').forEach(src => {
+    if (missing(src)) return;
+    const m = src.mapping, rate = Number(src.options.rate) || 0;
+    let used = 0, badDate = 0, badNum = 0, sample = '';
+    src.rows.forEach(r => {
+      const day = parseDate(r[m.date]);
+      if (!day) { badDate++; if (!sample) sample = String(r[m.date] == null ? '' : r[m.date]); return; }
+      const rev = parseNum(r[m.revenue]);
+      if (rev == null && String(r[m.revenue] == null ? '' : r[m.revenue]).trim() !== '') badNum++;
+      const country = (m.country ? String(r[m.country] == null ? '' : r[m.country]).trim().toUpperCase() : '') || S.noCountry;
+      const product = String(r[m.product] == null ? '' : r[m.product]).trim() || 'Khác';
+      countries.add(country);
+      const f = getFact(day, country, product);
+      f.rev += (rev || 0) * rate;
+      if (m.units) f.units += parseNum(r[m.units]) || 0;
+      if (m.orders) f.ordersN += parseNum(r[m.orders]) || 0;
+      hasRev = true; bump('rev', day);
+      if (m.ads) {
+        const a = parseNum(r[m.ads]);
+        if (a != null) { f.ads['Ads'] = (f.ads['Ads'] || 0) + a * rate; addChannel('Ads'); hasAds = true; bump('ads', day); }
+      }
+      used++;
+    });
+    src.info = used + ' dòng hợp lệ';
+    if (badDate) pushBanner(issues, used ? 'warn' : 'error', src.name, badDate + ' dòng có ngày không hợp lệ nên bị bỏ qua (ví dụ giá trị: "' + sample + '"). Kiểm tra lại cột ngày trong phần ánh xạ.');
+    if (badNum) pushBanner(issues, 'warn', src.name, badNum + ' ô doanh thu không phải số nên tính là 0.');
+    if (!used && !badDate) pushBanner(issues, 'error', src.name, 'Không có dòng hợp lệ nào trong file này.');
+  });
+
+  /* ---- 3. Ads ---- */
+  const countryList = Array.from(countries);
+  state.sources.filter(s => s.type === 'ads').forEach(src => {
+    if (missing(src)) return;
+    const m = src.mapping, o = src.options, rate = Number(o.rate) || 0;
+    const channel = String(o.channel || '').trim() || src.name;
+    addChannel(channel);
+    let used = 0, badDate = 0, badNum = 0, sample = '';
+    src.rows.forEach(r => {
+      const rawSpend = r[m.spend];
+      const spend = parseNum(rawSpend);
+      if (spend == null) { if (String(rawSpend == null ? '' : rawSpend).trim() !== '') badNum++; return; }
+      const day = parseDate(r[m.date]);
+      if (!day) { badDate++; if (!sample) sample = String(r[m.date] == null ? '' : r[m.date]); return; }
+      const camp = m.campaign ? String(r[m.campaign] == null ? '' : r[m.campaign]) : '';
+      const adset = m.adset ? String(r[m.adset] == null ? '' : r[m.adset]) : '';
+      let country = m.country ? String(r[m.country] == null ? '' : r[m.country]).trim().toUpperCase() : '';
+      if (!country) {
+        const toks = (camp + ' ' + adset).split(/[^A-Za-z0-9]+/).filter(t => t && t === t.toUpperCase());
+        country = toks.find(t => countryList.includes(t)) || S.noCountry;
+      }
+      let product;
+      if (o.productMode === 'fixed') product = String(o.fixedLabel || '').trim() || (channel + ' (chưa gán SP)');
+      else {
+        const txt = foldLower(adset || camp);
+        const hit = adsRules.find(rl => txt.includes(rl.kw));
+        product = hit ? hit.name : 'Chưa gán';
+      }
+      const f = getFact(day, country, product);
+      f.ads[channel] = (f.ads[channel] || 0) + spend * rate;
+      hasAds = true; bump('ads', day); used++;
+    });
+    src.info = used + ' dòng chi tiêu';
+    if (badDate) pushBanner(issues, used ? 'warn' : 'error', src.name, badDate + ' dòng có ngày không hợp lệ nên bị bỏ qua (ví dụ giá trị: "' + sample + '"). Kiểm tra lại cột ngày trong phần ánh xạ.');
+    if (badNum) pushBanner(issues, 'warn', src.name, badNum + ' ô chi tiêu không phải số nên bị bỏ qua.');
+    if (!used && !badDate && !badNum) pushBanner(issues, 'error', src.name, 'Không có dòng chi tiêu hợp lệ nào trong file này.');
+  });
+
+  /* ---- 4. Khoảng ngày tính ---- */
+  let win = { start: null, end: null }, winNote = '';
+  if (S.overlapOnly && hasRev && hasAds) {
+    const start = range.revMin > range.adsMin ? range.revMin : range.adsMin;
+    const end = range.revMax < range.adsMax ? range.revMax : range.adsMax;
+    if (start > end) {
+      pushBanner(issues, 'warn', 'Khoảng ngày', 'Doanh thu (' + fmtDay(range.revMin) + ' đến ' + fmtDay(range.revMax) + ') và ads (' + fmtDay(range.adsMin) + ' đến ' + fmtDay(range.adsMax) + ') không có ngày nào trùng nhau, nên mình hiển thị toàn bộ dữ liệu.');
+    } else win = { start, end };
+  }
+
+  // Thứ tự ổn định cho màu (không đổi khi lọc)
+  const actProd = new Map(), actCountry = new Map();
+  facts.forEach(f => {
+    const a = f.rev + Object.values(f.ads).reduce((x, y) => x + y, 0);
+    actProd.set(f.product, (actProd.get(f.product) || 0) + a);
+    actCountry.set(f.country, (actCountry.get(f.country) || 0) + a);
+  });
+  const prodOrder = Array.from(actProd.keys()).sort((a, b) => actProd.get(b) - actProd.get(a) || a.localeCompare(b));
+  const countryOrder = Array.from(actCountry.keys()).sort((a, b) => actCountry.get(b) - actCountry.get(a) || a.localeCompare(b));
+
+  return { facts, issues, channels, win, range, hasRev, hasAds, prodOrder, countryOrder };
+}
+
+/* ====================== Tổng hợp ====================== */
+function aggregate(model) {
+  const margin = Number(state.settings.margin);
+  const inWin = d => (!model.win.start || d >= model.win.start) && (!model.win.end || d <= model.win.end);
+  const visible = p => !state.hidden.has(p);
+  const adsOf = f => Object.values(f.ads).reduce((a, b) => a + b, 0);
+  const rows = [], outside = { rev: 0, ads: 0 };
+  model.facts.forEach(f => {
+    if (!visible(f.product)) return;
+    if (inWin(f.day)) rows.push(f);
+    else { outside.rev += f.rev; outside.ads += adsOf(f); }
+  });
+
+  const tot = { rev: 0, ads: 0, units: 0, ordersN: 0, adsBy: {} };
+  const union = new Set();
+  const byDay = new Map(), byCountry = new Map(), byProduct = new Map(), byDC = new Map();
+  rows.forEach(f => {
+    const a = adsOf(f);
+    tot.rev += f.rev; tot.ads += a; tot.units += f.units; tot.ordersN += f.ordersN;
+    Object.keys(f.ads).forEach(c => { tot.adsBy[c] = (tot.adsBy[c] || 0) + f.ads[c]; });
+    f.orders.forEach(o => union.add(o));
+
+    const d = byDay.get(f.day) || { day: f.day, rev: 0, ads: 0 };
+    d.rev += f.rev; d.ads += a; byDay.set(f.day, d);
+
+    const c = byCountry.get(f.country) || { country: f.country, rev: 0, ads: 0, units: 0, orders: new Set(), ordersN: 0, revDays: new Set(), adsDays: new Set() };
+    c.rev += f.rev; c.ads += a; c.units += f.units; c.ordersN += f.ordersN;
+    f.orders.forEach(o => c.orders.add(o));
+    if (f.rev > 0) c.revDays.add(f.day);
+    if (a > 0) c.adsDays.add(f.day);
+    byCountry.set(f.country, c);
+
+    const p = byProduct.get(f.product) || { product: f.product, rev: 0, ads: 0, units: 0 };
+    p.rev += f.rev; p.ads += a; p.units += f.units; byProduct.set(f.product, p);
+
+    const dc = byDC.get(f.day) || {};
+    const cell = dc[f.country] || { rev: 0, ads: 0 };
+    cell.rev += f.rev; cell.ads += a; dc[f.country] = cell; byDC.set(f.day, dc);
+  });
+
+  const dayList = Array.from(byDay.values()).sort((x, y) => (x.day < y.day ? -1 : 1));
+  dayList.forEach(d => { d.profit = d.rev * margin - d.ads; d.pct = d.rev > 0 ? d.ads / d.rev : null; });
+  const countryList = Array.from(byCountry.values()).sort((x, y) => y.rev - x.rev || x.country.localeCompare(y.country));
+  countryList.forEach(c => { c.profit = c.rev * margin - c.ads; c.roas = c.ads > 0 ? c.rev / c.ads : null; c.nOrders = c.orders.size + c.ordersN; });
+  const spendTotal = tot.ads;
+  const prodList = Array.from(byProduct.values()).filter(p => p.rev > 0 || p.ads > 0).sort((x, y) => y.rev - x.rev || y.ads - x.ads);
+  prodList.forEach(p => { p.profit = p.rev * margin - p.ads; p.roas = p.ads > 0 ? p.rev / p.ads : null; p.share = spendTotal > 0 ? p.ads / spendTotal : 0; });
+
+  tot.profit = tot.rev * margin - tot.ads;
+  tot.orders = union.size + tot.ordersN;
+  tot.roas = tot.ads > 0 ? tot.rev / tot.ads : null;
+  tot.adsPct = tot.rev > 0 ? tot.ads / tot.rev : null;
+
+  // Bảng ngày x quốc gia (dòng tổng ở đầu)
+  const cc = countryList.map(c => c.country);
+  const dcRows = Array.from(byDC.keys()).sort().reverse().map(day => {
+    const dc = byDC.get(day), row = { day, cells: {}, all: { rev: 0, ads: 0 } };
+    cc.forEach(k => {
+      const x = dc[k] || { rev: 0, ads: 0 };
+      row.cells[k] = { rev: x.rev, ads: x.ads, profit: x.rev * margin - x.ads, roas: x.ads > 0 ? x.rev / x.ads : null };
+      row.all.rev += x.rev; row.all.ads += x.ads;
+    });
+    row.all.profit = row.all.rev * margin - row.all.ads; row.all.roas = row.all.ads > 0 ? row.all.rev / row.all.ads : null;
+    return row;
+  });
+  const totRow = { day: 'TOTAL', cells: {}, all: { rev: tot.rev, ads: tot.ads, profit: tot.profit, roas: tot.roas } };
+  countryList.forEach(c => { totRow.cells[c.country] = { rev: c.rev, ads: c.ads, profit: c.profit, roas: c.roas }; });
+
+  return { rows, tot, dayList, countryList, prodList, dcRows: [totRow].concat(dcRows), cc, outside, margin };
+}
+
+/* ====================== Màu ====================== */
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function theme() {
+  return {
+    fg: cssVar('--fg'), fg2: cssVar('--fg2'), muted: cssVar('--muted'), grid: cssVar('--grid'), axis: cssVar('--axis'),
+    panel: cssVar('--panel'), border: cssVar('--border'), pos: cssVar('--pos'), neg: cssVar('--neg'), gray: cssVar('--gray'),
+    s: [1, 2, 3, 4, 5, 6, 7, 8].map(i => cssVar('--s' + i))
+  };
+}
+// Màu gắn theo thực thể (không đổi khi lọc); từ loại thứ 9 trở đi dùng màu xám
+function colorOf(order, key, th) { const i = order.indexOf(key); return i >= 0 && i < 8 ? th.s[i] : th.gray; }
+
+/* ====================== Biểu đồ ====================== */
+const valueLabels = {
+  id: 'valueLabels',
+  afterDatasetsDraw(chart, args, opts) {
+    if (!opts || !opts.mode) return;
+    const ctx = chart.ctx, area = chart.chartArea;
+    ctx.save();
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillStyle = opts.color; ctx.strokeStyle = opts.halo; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+    const put = (t, x, y, align) => { ctx.textAlign = align || 'center'; ctx.strokeText(t, x, y); ctx.fillText(t, x, y); };
+    if (opts.mode === 'pair') {
+      const v0 = chart.isDatasetVisible(0), v1 = chart.isDatasetVisible(1);
+      const m0 = chart.getDatasetMeta(0), m1 = chart.getDatasetMeta(1), n = m0.data.length;
+      const every = Math.max(1, Math.ceil(46 / Math.max(area.width / Math.max(n, 1), 1)));
+      for (let i = 0; i < n; i += every) {
+        const a = chart.data.datasets[0].data[i], b = chart.data.datasets[1].data[i];
+        const p0 = m0.data[i], p1 = m1.data[i];
+        if (v0 && v1) {
+          const hi = a >= b ? { p: p0, v: a } : { p: p1, v: b }, lo = a >= b ? { p: p1, v: b } : { p: p0, v: a };
+          put(fmtUsd0(hi.v), hi.p.x, hi.p.y - 8);
+          if (lo.p.y + 15 < area.bottom) put(fmtUsd0(lo.v), lo.p.x, lo.p.y + 15);
+        } else if (v0) put(fmtUsd0(a), p0.x, p0.y - 8);
+        else if (v1) put(fmtUsd0(b), p1.x, p1.y - 8);
+      }
+    } else if (opts.mode === 'barEnd') {
+      chart.getDatasetMeta(0).data.forEach((bar, i) => { if (opts.labels[i] != null) put(opts.labels[i], bar.x + 6, bar.y + 4, 'left'); });
+    }
+    ctx.restore();
+  }
+};
+
+function mkChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+function destroyCharts() { Object.keys(charts).forEach(k => { charts[k].destroy(); delete charts[k]; }); }
+
+function baseOpts(th, extra) {
+  const o = {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: { backgroundColor: th.panel, titleColor: th.fg, bodyColor: th.fg2, footerColor: th.fg, borderColor: th.axis, borderWidth: 1, padding: 8, boxPadding: 4, usePointStyle: true },
+      valueLabels: { mode: null }
+    },
+    scales: {
+      x: { grid: { display: false }, border: { color: th.axis }, ticks: { color: th.fg2, maxRotation: 0, autoSkip: true, callback(v) { return fmtDayShort(String(this.getLabelForValue(v))); } } },
+      y: { grid: { color: th.grid }, border: { display: false }, ticks: { color: th.fg2, maxTicksLimit: 6, callback: v => fmtUsd0(v) } }
+    }
+  };
+  return Object.assign(o, extra || {});
+}
+
+function drawCharts(agg, model) {
+  const th = theme();
+  Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+  Chart.defaults.color = th.fg2;
+  const days = agg.dayList.map(d => d.day);
+
+  // 1. Doanh thu và ads
+  const o1 = baseOpts(th, { layout: { padding: { top: 16 } } });
+  o1.plugins.legend = { display: true, position: 'top', align: 'start', labels: { color: th.fg2, usePointStyle: true, boxWidth: 8, boxHeight: 8, padding: 14 } };
+  o1.plugins.valueLabels = { mode: 'pair', color: th.fg, halo: th.panel };
+  o1.plugins.tooltip.callbacks = {
+    title: items => fmtDay(items[0].label),
+    label: it => ' ' + it.dataset.label + ': ' + fmtUsd0(it.parsed.y),
+    afterBody: items => { const d = agg.dayList[items[0].dataIndex]; return 'Ads ÷ doanh thu: ' + (d.pct == null ? '—' : fmtPct(d.pct)); }
+  };
+  mkChart('cRevAds', {
+    type: 'line',
+    data: { labels: days, datasets: [
+      { label: 'Doanh thu', data: agg.dayList.map(d => d.rev), borderColor: th.s[0], backgroundColor: th.s[0], borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0 },
+      { label: 'Ads', data: agg.dayList.map(d => d.ads), borderColor: th.s[1], backgroundColor: th.s[1], borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0 }
+    ] },
+    options: o1, plugins: [valueLabels]
+  });
+
+  // 2. Profit theo ngày
+  const o2 = baseOpts(th);
+  o2.plugins.tooltip.callbacks = { title: items => fmtDay(items[0].label), label: it => ' Profit: ' + fmtUsd2(it.parsed.y) };
+  mkChart('cProfit', {
+    type: 'bar',
+    data: { labels: days, datasets: [{ label: 'Profit', data: agg.dayList.map(d => d.profit), backgroundColor: agg.dayList.map(d => d.profit < 0 ? th.neg : th.s[0]), borderRadius: 3, maxBarThickness: 32 }] },
+    options: o2
+  });
+
+  // 3. Theo loại sản phẩm theo ngày (cột chồng, mỗi sản phẩm một dataset)
+  const metric = state.metric;
+  const visProd = model.prodOrder.filter(p => !state.hidden.has(p));
+  const val = (f) => metric === 'rev' ? f.rev : (metric === 'ads' ? Object.values(f.ads).reduce((a, b) => a + b, 0) : f.rev * agg.margin - Object.values(f.ads).reduce((a, b) => a + b, 0));
+  const perProd = new Map();
+  agg.rows.forEach(f => {
+    const m = perProd.get(f.product) || {};
+    m[f.day] = (m[f.day] || 0) + val(f);
+    perProd.set(f.product, m);
+  });
+  const dsets = [], rest = {};
+  visProd.forEach(p => {
+    const idx = model.prodOrder.indexOf(p), m = perProd.get(p) || {};
+    if (idx < 8) dsets.push({ label: p, data: days.map(d => m[d] || 0), backgroundColor: th.s[idx], borderColor: th.panel, borderWidth: 1, stack: 's' });
+    else days.forEach(d => { rest[d] = (rest[d] || 0) + (m[d] || 0); });
+  });
+  if (Object.keys(rest).length) dsets.push({ label: 'Khác', data: days.map(d => rest[d] || 0), backgroundColor: th.gray, borderColor: th.panel, borderWidth: 1, stack: 's' });
+  const o3 = baseOpts(th);
+  o3.scales.x.stacked = true; o3.scales.y.stacked = true;
+  o3.plugins.legend = { display: dsets.length >= 2, position: 'top', align: 'start', labels: { color: th.fg2, usePointStyle: true, boxWidth: 8, boxHeight: 8, padding: 14 } };
+  o3.plugins.tooltip.filter = item => item.parsed.y !== 0;
+  o3.plugins.tooltip.callbacks = {
+    title: items => fmtDay(items[0].label),
+    label: it => ' ' + it.dataset.label + ': ' + fmtUsd0(it.parsed.y),
+    footer: items => 'Tổng: ' + fmtUsd0(items.reduce((a, b) => a + b.parsed.y, 0))
+  };
+  mkChart('cProduct', { type: 'bar', data: { labels: days, datasets: dsets }, options: o3 });
+
+  // 4. Tỷ lệ chi tiêu ads theo sản phẩm
+  const sp = agg.prodList.filter(p => p.ads > 0).sort((a, b) => b.ads - a.ads);
+  const o4 = baseOpts(th, { indexAxis: 'y', layout: { padding: { right: 48 } } });
+  o4.interaction = { mode: 'nearest', intersect: true, axis: 'y' };
+  o4.scales = {
+    x: { grid: { color: th.grid }, border: { display: false }, ticks: { color: th.fg2, callback: v => Math.round(v * 100) + '%' } },
+    y: { grid: { display: false }, border: { color: th.axis }, ticks: { color: th.fg2 } }
+  };
+  o4.plugins.valueLabels = { mode: 'barEnd', color: th.fg, halo: th.panel, labels: sp.map(p => fmtPct(p.share)) };
+  o4.plugins.tooltip.callbacks = { label: it => ' ' + fmtPct(it.parsed.x) + ' (' + fmtUsd0(sp[it.dataIndex].ads) + ')' };
+  mkChart('cShare', {
+    type: 'bar',
+    data: { labels: sp.map(p => p.product), datasets: [{ label: '% spend', data: sp.map(p => p.share), backgroundColor: sp.map(p => colorOf(model.prodOrder, p.product, th)), borderRadius: 4, maxBarThickness: 26 }] },
+    options: o4, plugins: [valueLabels]
+  });
+}
+
+/* ====================== Giao diện ====================== */
+function renderBanner(issues) {
+  const box = $('#banner');
+  if (!issues.length) { box.innerHTML = ''; return; }
+  const errs = issues.filter(i => i.level === 'error'), warns = issues.filter(i => i.level === 'warn');
+  const li = i => '<li><b>' + esc(i.src) + ':</b> ' + esc(i.msg) + '</li>';
+  box.innerHTML =
+    (errs.length ? '<div class="note-err" role="alert"><div class="font-semibold mb-1">Lỗi dữ liệu</div><ul class="list-disc pl-5 space-y-1">' + errs.map(li).join('') + '</ul></div>' : '') +
+    (warns.length ? '<div class="note-warn"><div class="font-semibold mb-1">Cảnh báo</div><ul class="list-disc pl-5 space-y-1">' + warns.map(li).join('') + '</ul></div>' : '');
+}
+
+function optionList(fields, sel, autoLabel, noneLabel) {
+  let h = '<option value="">' + esc(autoLabel || noneLabel || '(không dùng)') + '</option>';
+  fields.forEach(f => { h += '<option value="' + esc(f) + '"' + (f === sel ? ' selected' : '') + '>' + esc(f) + '</option>'; });
+  return h;
+}
+
+function renderSources() {
+  const box = $('#sources');
+  if (!state.sources.length) { box.innerHTML = ''; return; }
+  box.innerHTML = state.sources.map(src => {
+    const showMap = state.mapOpen || !!src.err;
+    const status = src.err ? '<span class="text-xs" style="color:var(--neg)">Lỗi</span>' : '<span class="text-xs muted">' + esc(src.info || '') + '</span>';
+    let map = '';
+    if (showMap) {
+      map += '<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-3">';
+      FIELDS[src.type].forEach(f => {
+        map += '<div><label class="lbl">' + esc(f.label) + (f.req ? ' *' : '') + '</label>' +
+          '<select class="field" data-sid="' + src.id + '" data-kind="map" data-f="' + f.k + '">' +
+          optionList(src.fields, src.mapping[f.k], f.auto ? '(Tự động từ SKU / tên sản phẩm)' : '(không dùng)') + '</select></div>';
+      });
+      if (src.type === 'orders' || src.type === 'tidy') {
+        map += '<div><label class="lbl">Nhân với … để ra USD (tỷ giá)' + (src.type === 'orders' && src.options.currency ? ' · tiền tệ file: ' + esc(src.options.currency) : '') + '</label>' +
+          '<input class="field" type="number" step="any" min="0" data-sid="' + src.id + '" data-kind="opt" data-f="rate" value="' + esc(src.options.rate) + '"></div>';
+      }
+      if (src.type === 'ads') {
+        map += '<div><label class="lbl">Tên kênh</label><input class="field" type="text" data-sid="' + src.id + '" data-kind="opt" data-f="channel" value="' + esc(src.options.channel) + '"></div>' +
+          '<div><label class="lbl">Nhân với … để ra USD</label><input class="field" type="number" step="any" min="0" data-sid="' + src.id + '" data-kind="opt" data-f="rate" value="' + esc(src.options.rate) + '"></div>' +
+          '<div><label class="lbl">Cách gán sản phẩm cho ads</label><select class="field" data-sid="' + src.id + '" data-kind="opt" data-f="productMode">' +
+          '<option value="rules"' + (src.options.productMode === 'rules' ? ' selected' : '') + '>Suy ra từ tên ad set theo quy tắc</option>' +
+          '<option value="fixed"' + (src.options.productMode === 'fixed' ? ' selected' : '') + '>Gom vào một nhóm cố định</option></select></div>' +
+          '<div><label class="lbl">Tên nhóm cố định</label><input class="field" type="text" data-sid="' + src.id + '" data-kind="opt" data-f="fixedLabel" value="' + esc(src.options.fixedLabel) + '"></div>';
+      }
+      map += '</div>';
+    }
+    return '<div class="rounded-lg border p-3" style="border-color:var(--border)">' +
+      '<div class="flex flex-wrap items-center gap-2">' +
+      '<span class="text-sm font-medium break-all">' + esc(src.name) + '</span>' +
+      '<select class="field" style="width:auto" data-sid="' + src.id + '" data-kind="type" aria-label="Loại file">' +
+      Object.keys(TYPE_LABEL).map(t => '<option value="' + t + '"' + (t === src.type ? ' selected' : '') + '>' + TYPE_LABEL[t] + '</option>').join('') + '</select>' +
+      '<span class="text-xs muted">' + fmtInt(src.rows.length) + ' dòng</span>' + status +
+      (src.restored ? '<span class="text-xs muted">· đã khôi phục ánh xạ đã lưu</span>' : '') +
+      '<button class="btn ml-auto" type="button" data-remove="' + src.id + '">Gỡ file</button></div>' + map + '</div>';
+  }).join('');
+}
+
+function kpiCard(label, value, sub, color) {
+  return '<div class="card"><div class="muted text-xs">' + esc(label) + '</div><div class="kpi-num mt-1"' + (color ? ' style="color:' + color + '"' : '') + '>' + esc(value) + '</div><div class="muted text-xs mt-1">' + sub + '</div></div>';
+}
+
+function renderFilters(model) {
+  const th = theme();
+  $('#filters').innerHTML = model.prodOrder.map(p =>
+    '<label class="text-sm flex items-center gap-2 cursor-pointer"><input type="checkbox" data-p="' + esc(p) + '"' + (state.hidden.has(p) ? '' : ' checked') + '>' +
+    '<span class="dot" style="background:' + colorOf(model.prodOrder, p, th) + '"></span>' + esc(p) + '</label>').join('');
+}
+
+function toneCls(v, kind, be) { if (v == null) return ''; return kind === 'roas' ? (v >= be ? 'pos' : 'neg') : (v < 0 ? 'neg' : (v > 0 ? 'pos' : '')); }
+
+function renderResults() {
+  const model = state.model;
+  const hasData = model.facts.size > 0;
+  $('#results').classList.toggle('hidden-x', !hasData);
+  $('#empty').classList.toggle('hidden-x', hasData || state.sources.length > 0);
+  if (!hasData) { destroyCharts(); state.agg = null; return; }
+  const agg = aggregate(model); state.agg = agg;
+  const th = theme(), t = agg.tot, be = 1 / agg.margin;
+
+  const adsSub = model.channels.length
+    ? model.channels.map(c => esc(c) + ' ' + fmtUsd0(t.adsBy[c] || 0)).join(' · ') + (t.adsPct != null ? '<br>' + fmtPct(t.adsPct) + ' doanh thu' : '')
+    : 'Chưa có dữ liệu ads';
+  const prodCount = model.prodOrder.filter(p => !state.hidden.has(p)).length;
+  $('#kpis').innerHTML =
+    kpiCard('Tổng doanh thu', fmtUsd0(t.rev), 'USD, sau hoàn tiền') +
+    kpiCard('Chi tiêu ads', fmtUsd0(t.ads), adsSub) +
+    kpiCard('Profit', fmtUsd0(t.profit), 'Biên ' + (t.rev > 0 ? fmtPct(t.profit / t.rev) : '—') + ' doanh thu', t.profit < 0 ? th.neg : '') +
+    kpiCard('ROAS', t.roas == null ? '—' : fmtRoas(t.roas), 'Hòa vốn ' + fmtRoas(be)) +
+    kpiCard('Tổng đơn', fmtInt(t.orders), t.orders > 0 ? 'Giá trị TB ' + fmtUsd2(t.rev / t.orders) : (model.hasRev ? 'Không có cột số đơn' : '—')) +
+    kpiCard('Số loại sản phẩm', fmtInt(prodCount) + '/' + fmtInt(model.prodOrder.length), 'đang hiển thị / có trong file · ' + fmtInt(model.countryOrder.length) + ' quốc gia');
+
+  $('#adsPctTxt').textContent = t.adsPct == null ? '—' : 'ads chiếm ' + fmtPct(t.adsPct) + ' doanh thu';
+  $('#beTxt').textContent = fmtRoas(be);
+  $('#mTxt').textContent = String(agg.margin).replace('.', ',');
+  const rangeTxt = agg.dayList.length ? fmtDay(agg.dayList[0].day) + ' đến ' + fmtDay(agg.dayList[agg.dayList.length - 1].day) : '';
+  $('#subtitle').textContent = rangeTxt ? 'Kỳ tính: ' + rangeTxt + ' · ' + fmtInt(agg.dayList.length) + ' ngày' : 'Chưa có ngày nào trong kỳ tính.';
+
+  drawCharts(agg, model);
+
+  // Bảng quốc gia
+  let h = '<thead><tr><th>Quốc gia</th><th>Đơn</th><th>Doanh thu</th><th>Ads</th><th>Profit</th><th>ROAS</th></tr></thead><tbody>';
+  agg.countryList.forEach(c => {
+    h += '<tr><td><span class="dot" style="background:' + colorOf(model.countryOrder, c.country, th) + '"></span>' + esc(c.country) + '</td><td>' + (c.nOrders ? fmtInt(c.nOrders) : '—') + '</td><td>' + fmtUsd0(c.rev) + '</td><td>' + fmtUsd0(c.ads) + '</td><td class="' + toneCls(c.profit, 'p') + '">' + fmtUsd0(c.profit) + '</td><td class="' + toneCls(c.roas, 'roas', be) + '">' + (c.roas == null ? '—' : fmtRoas(c.roas)) + '</td></tr>';
+  });
+  $('#tblCountry').innerHTML = h + '</tbody>';
+  const gaps = agg.countryList.filter(c => c.revDays.size > 0 && model.hasAds && c.adsDays.size < c.revDays.size);
+  $('#noteCountry').innerHTML = gaps.map(c => '<div class="note-warn">Ads của <b>' + esc(c.country) + '</b> chỉ có ở ' + c.adsDays.size + ' trong ' + c.revDays.size + ' ngày có doanh thu, nên Profit của ' + esc(c.country) + ' có thể đang cao hơn thực tế.</div>').join('');
+
+  // Bảng ngày x quốc gia
+  const cc = agg.cc;
+  const gcol = k => colorOf(model.countryOrder, k, th);
+  h = '<thead><tr><th>Ngày</th>';
+  cc.forEach(k => { h += ['spent', 'profit', 'ROAS'].map(n => '<th class="gc" style="--gc:' + gcol(k) + '">' + esc(k) + ' ' + n + '</th>').join(''); });
+  h += ['Tổng spent', 'Tổng profit', 'Tổng ROAS'].map(n => '<th class="gc" style="--gc:var(--muted)">' + n + '</th>').join('') + '</tr></thead><tbody>';
+  agg.dcRows.forEach(r => {
+    const tot = r.day === 'TOTAL';
+    h += '<tr' + (tot ? ' class="tot"' : '') + '><td' + (tot ? '' : '') + '>' + (tot ? 'Tổng kỳ' : fmtDay(r.day)) + '</td>';
+    const cell = (c, style) => '<td class="gc ' + '" style="--gc:' + style + '">' + fmtUsd2(c.ads) + '</td><td class="gc ' + toneCls(c.profit, 'p') + '" style="--gc:' + style + '">' + fmtUsd2(c.profit) + '</td><td class="gc ' + (c.ads > 0 ? toneCls(c.roas, 'roas', be) : '') + '" style="--gc:' + style + '">' + (c.ads > 0 ? fmtRoas(c.roas) : '—') + '</td>';
+    cc.forEach(k => { h += cell(r.cells[k], gcol(k)); });
+    h += cell(r.all, 'var(--muted)') + '</tr>';
+  });
+  $('#tblDay').innerHTML = h + '</tbody>';
+  const key = cc.map(k => '<span><span class="dot" style="background:' + gcol(k) + '"></span>' + esc(k) + '</span>').join('') + '<span><span class="dot" style="background:var(--muted)"></span>Tổng</span>';
+  $('#dcKey').innerHTML = key;
+  const th1 = $('#tblDay thead th'); if (th1) $('#dcScroll').style.setProperty('--hh', th1.offsetHeight + 'px');
+
+  // Bảng sản phẩm
+  h = '<thead><tr><th>Sản phẩm</th><th>SL</th><th>Doanh thu</th><th>Ads</th><th>% spend</th><th>Profit</th><th>ROAS</th></tr></thead><tbody>';
+  agg.prodList.forEach(p => {
+    h += '<tr><td><span class="dot" style="background:' + colorOf(model.prodOrder, p.product, th) + '"></span>' + esc(p.product) + '</td><td>' + fmtInt(p.units) + '</td><td>' + fmtUsd0(p.rev) + '</td><td>' + fmtUsd0(p.ads) + '</td><td>' + fmtPct(p.share) + '</td><td class="' + toneCls(p.profit, 'p') + '">' + fmtUsd0(p.profit) + '</td><td class="' + toneCls(p.roas, 'roas', be) + '">' + (p.roas == null ? '—' : fmtRoas(p.roas)) + '</td></tr>';
+  });
+  $('#tblProduct').innerHTML = h + '</tbody>';
+
+  // Ghi chú khoảng ngày
+  let nw = '';
+  if (model.win.start) nw += '<div>Đang chỉ tính các ngày ' + fmtDay(model.win.start) + ' đến ' + fmtDay(model.win.end) + ', là phần hai nguồn doanh thu và ads cùng có dữ liệu.</div>';
+  if (agg.outside.rev > 0.5 || agg.outside.ads > 0.5) {
+    const parts = [];
+    if (agg.outside.ads > 0.5) parts.push('ads ' + fmtUsd0(agg.outside.ads));
+    if (agg.outside.rev > 0.5) parts.push('doanh thu ' + fmtUsd0(agg.outside.rev));
+    nw += '<div class="note-warn mt-1">Chưa tính, vì chỉ một nguồn có dữ liệu ở các ngày này: ' + parts.join(' và ') + '.</div>';
+  }
+  $('#noteWindow').innerHTML = nw;
+}
+
+function refresh() {
+  state.model = buildModel();
+  renderBanner(state.model.issues);
+  renderSources();
+  renderFilters(state.model);
+  renderResults();
+  $('#empty').classList.toggle('hidden-x', state.model.facts.size > 0 || state.sources.length > 0);
+}
+
+/* ====================== Sự kiện ====================== */
+const drop = $('#dropzone');
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files) handleFiles(e.dataTransfer.files); });
+$('#fileInput').addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
+$('#gsLoad').addEventListener('click', () => loadGoogleSheet(false));
+// Chặn trình duyệt mở file khi thả ra ngoài vùng kéo thả
+['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => { if (!drop.contains(e.target)) e.preventDefault(); }));
+
+$('#sources').addEventListener('change', e => {
+  const el = e.target, sid = +el.dataset.sid;
+  const src = state.sources.find(s => s.id === sid);
+  if (!src) return;
+  const kind = el.dataset.kind, f = el.dataset.f;
+  if (kind === 'type') {
+    src.type = el.value;
+    src.mapping = autoMap(src.type, src.fields);
+    src.options = defaultOptions(src.type, src.fields, src.name, src.mapping, src.rows);
+    src.restored = false;
+  } else if (kind === 'map') src.mapping[f] = el.value;
+  else if (kind === 'opt') src.options[f] = el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.value;
+  saveMapping(src);
+  refresh();
+});
+$('#sources').addEventListener('click', e => {
+  const b = e.target.closest('[data-remove]');
+  if (!b) return;
+  const id = +b.dataset.remove;
+  state.sources = state.sources.filter(s => s.id !== id);
+  refresh();
+});
+
+$('#btnSettings').addEventListener('click', () => {
+  state.mapOpen = !state.mapOpen;
+  $('#settingsPanel').classList.toggle('hidden-x', !state.mapOpen);
+  $('#btnSettings').setAttribute('aria-expanded', String(state.mapOpen));
+  renderSources();
+});
+$('#btnClear').addEventListener('click', () => { state.sources = []; loadIssues.length = 0; refresh(); });
+$('#btnAllProd').addEventListener('click', () => { state.hidden.clear(); LS.set('pfd:hidden', []); renderFilters(state.model); renderResults(); });
+$('#btnNoProd').addEventListener('click', () => { state.hidden = new Set(state.model.prodOrder); LS.set('pfd:hidden', Array.from(state.hidden)); renderFilters(state.model); renderResults(); });
+$('#filters').addEventListener('change', e => {
+  const p = e.target.dataset.p;
+  if (p == null) return;
+  if (e.target.checked) state.hidden.delete(p); else state.hidden.add(p);
+  LS.set('pfd:hidden', Array.from(state.hidden));
+  renderResults();
+});
+$('#metricSel').addEventListener('change', e => { state.metric = e.target.value; if (state.agg) drawCharts(state.agg, state.model); });
+
+// Cài đặt chung
+function bindSettings() {
+  const S = state.settings;
+  $('#setMargin').value = S.margin; $('#setNoCountry').value = S.noCountry; $('#setOverlap').checked = !!S.overlapOnly;
+  $('#setAddon').value = S.addonKw; $('#setProdRules').value = S.prodRules; $('#setAdsRules').value = S.adsRules;
+  const upd = (key, get) => e => {
+    const v = get(e.target);
+    if (key === 'margin' && !(v > 0 && v <= 1)) return;
+    S[key] = v; LS.set('pfd:settings', S); refresh();
+  };
+  $('#setMargin').addEventListener('change', upd('margin', el => Number(el.value)));
+  $('#setNoCountry').addEventListener('change', upd('noCountry', el => el.value.trim() || '(Không rõ)'));
+  $('#setOverlap').addEventListener('change', upd('overlapOnly', el => el.checked));
+  $('#setAddon').addEventListener('change', upd('addonKw', el => el.value));
+  $('#setProdRules').addEventListener('change', upd('prodRules', el => el.value));
+  $('#setAdsRules').addEventListener('change', upd('adsRules', el => el.value));
+}
+
+// Dữ liệu mẫu giả lập (không phải dữ liệu thật)
+$('#btnSample').addEventListener('click', () => {
+  let a = 20261011;
+  const rnd = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const prods = [['T-shirt', 42, 1], ['Mug', 30, 0.5], ['Hoodie', 70, 0.35], ['Canvas', 95, 0.2]];
+  const ctry = [['SE', 1], ['NO', 0.3]];
+  const rows = [], now = new Date();
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i)).toISOString().slice(0, 10);
+    ctry.forEach(([c, cw]) => prods.forEach(([p, price, pw]) => {
+      const n = Math.round(rnd() * 4 * cw * pw + (rnd() < 0.3 ? 1 : 0));
+      const ads = Math.round(rnd() * 40 * cw * pw * 100) / 100;
+      rows.push({ date: d, country: c, product: p, revenue: String(Math.round(n * price * 100) / 100), ads: String(ads), orders: String(n), units: String(n) });
+    }));
+  }
+  addSource('mau-gia-lap.csv', ['date', 'country', 'product', 'revenue', 'ads', 'orders', 'units'], rows);
+  refresh();
+});
+
+// Xuất CSV tổng hợp (có thể nạp lại làm "Bảng tổng hợp")
+$('#btnExport').addEventListener('click', () => {
+  if (!state.agg) return;
+  const chs = state.model.channels, m = state.agg.margin;
+  const q = v => { const s = String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const head = ['date', 'country', 'product', 'units', 'revenue', 'ads'].concat(chs.map(c => 'ads_' + c), ['profit']);
+  const lines = [head.join(',')];
+  state.agg.rows.slice().sort((x, y) => (x.day + x.country + x.product < y.day + y.country + y.product ? -1 : 1)).forEach(f => {
+    const ads = Object.values(f.ads).reduce((x, y) => x + y, 0);
+    lines.push([f.day, f.country, f.product, f.units, f.rev.toFixed(4), ads.toFixed(4)].concat(chs.map(c => (f.ads[c] || 0).toFixed(4)), [(f.rev * m - ads).toFixed(4)]).map(q).join(','));
+  });
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = 'tong-hop-doanh-thu-ads-profit.csv'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+// Đổi chế độ sáng/tối của hệ điều hành thì vẽ lại
+if (window.matchMedia) {
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const redo = () => { if (state.model) { renderFilters(state.model); renderResults(); } };
+  if (mq.addEventListener) mq.addEventListener('change', redo); else if (mq.addListener) mq.addListener(redo);
+}
+
+/* ====================== Khởi động ====================== */
+bindSettings();
+if (typeof Papa === 'undefined' || typeof Chart === 'undefined') {
+  const lost = [typeof Papa === 'undefined' ? 'PapaParse' : '', typeof Chart === 'undefined' ? 'Chart.js' : ''].filter(Boolean).join(', ');
+  loadIssues.push({ level: 'error', src: 'Thư viện', msg: 'Không tải được ' + lost + ' từ CDN. Kiểm tra kết nối mạng rồi tải lại trang.' });
+}
+{
+  const gs = LS.get('pfd:gsheet', null);
+  if (gs) { $('#gsUrl').value = gs.url || ''; $('#gsTabs').value = gs.tabs || ''; $('#gsAuto').checked = !!gs.auto; }
+  $('#gsAuto').addEventListener('change', () => {
+    const cur = LS.get('pfd:gsheet', {}) || {};
+    LS.set('pfd:gsheet', Object.assign({}, cur, { url: $('#gsUrl').value.trim(), tabs: $('#gsTabs').value, auto: $('#gsAuto').checked }));
+  });
+  refresh();
+  if (gs && gs.auto && gs.url && typeof Papa !== 'undefined') loadGoogleSheet(true);
+}
+window.__pfd = { state, buildModel, aggregate, handleFiles, refresh, parseDate, parseNum, loadGoogleSheet };
+})();
+</script>
+</body>
+</html>
